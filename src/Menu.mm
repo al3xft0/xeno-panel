@@ -2,15 +2,18 @@
 #import "Core.h"
 #import <QuartzCore/QuartzCore.h>
 
-static const CGFloat kPanelW = 268.f;
-static const CGFloat kRowH   = 34.f;
-static const CGFloat kHeadH  = 46.f;
+static const CGFloat kPanelW = 280.f;
+static const CGFloat kRowH   = 32.f;
+static const CGFloat kHeadH  = 52.f;
+static const CGFloat kTabH   = 36.f;
+static const CGFloat kBtnSize = 52.f;
 
 @implementation XenoMenu {
     CGPoint _origin;
     BOOL    _dragging;
     CGPoint _dragStart;
     CGRect  _rect;
+    CGRect  _btnRect;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -19,51 +22,56 @@ static const CGFloat kHeadH  = 46.f;
     self.backgroundColor = UIColor.clearColor;
     self.opaque = NO;
     self.multipleTouchEnabled = NO;
-    _origin = CGPointMake(18, gCfg.insetTop + 24);
+    _origin = CGPointMake(20, gCfg.insetTop + 60);
+    gCfg.menuOpen = YES;
     [self layoutRect];
-    CALayer* glow = [CALayer layer];
-    glow.backgroundColor = [UIColor colorWithWhite:1 alpha:0.05].CGColor;
-    glow.cornerRadius = 16;
-    glow.shadowColor = UIColor.whiteColor.CGColor;
-    glow.shadowRadius = 20;
-    glow.shadowOpacity = 0.28;
-    glow.shadowOffset = CGSizeZero;
-    glow.name = @"glow";
-    [self.layer addSublayer:glow];
     return self;
 }
 
 - (void)layoutRect {
-    _rect = CGRectMake(_origin.x, _origin.y, kPanelW, kHeadH + kRowH * T_COUNT + 14);
-    CALayer* glow = [self.layer valueForKey:@"glow"] ?: self.layer.sublayers.firstObject;
-    glow.frame = CGRectInset(_rect, -10, -10);
-    glow.cornerRadius = 16;
+    _rect = CGRectMake(_origin.x, _origin.y, kPanelW, kHeadH + kTabH + kRowH * 8 + 20);
+    _btnRect = CGRectMake(self.bounds.size.width - kBtnSize - 16, self.bounds.size.height - kBtnSize - 80, kBtnSize, kBtnSize);
 }
 
 - (BOOL)pointInside:(CGPoint)p withEvent:(UIEvent*)e {
-    return !self.collapsed && CGRectContainsPoint(_rect, p);
+    if (CGRectContainsPoint(_btnRect, p)) return YES;
+    return gCfg.menuOpen && CGRectContainsPoint(_rect, p);
 }
 
 - (UIView*)hitTest:(CGPoint)p withEvent:(UIEvent*)e {
     return [self pointInside:p withEvent:e] ? self : nil;
 }
 
-// ---- drag by header ----
 - (void)touchesBegan:(NSSet*)touches withEvent:(UIEvent*)event {
     CGPoint p = [touches.anyObject locationInView:self];
+    if (CGRectContainsPoint(_btnRect, p)) {
+        gCfg.menuOpen = !gCfg.menuOpen;
+        [self setNeedsDisplay];
+        return;
+    }
+    if (!gCfg.menuOpen) return;
     CGRect head = CGRectMake(_rect.origin.x, _rect.origin.y, kPanelW, kHeadH);
     if (CGRectContainsPoint(head, p)) {
         _dragging = YES;
         _dragStart = CGPointMake(p.x - _origin.x, p.y - _origin.y);
         return;
     }
-    for (int i = 0; i < T_COUNT; i++) {
-        if (CGRectContainsPoint([self rectForRow:i], p)) { xenoSetToggle(i); [self setNeedsDisplay]; return; }
+    // tabs
+    for (int t = 0; t < TAB_COUNT; t++) {
+        CGRect tr = CGRectMake(_rect.origin.x + t * (kPanelW / TAB_COUNT), _rect.origin.y + kHeadH, kPanelW / TAB_COUNT, kTabH);
+        if (CGRectContainsPoint(tr, p)) { gCfg.tab = t; [self setNeedsDisplay]; return; }
     }
-    if (CGRectContainsPoint([self rectForStepper:T_COUNT - 2 minus:YES], p)) { xenoStep(T_COUNT - 2, -1); [self setNeedsDisplay]; return; }
-    if (CGRectContainsPoint([self rectForStepper:T_COUNT - 2 minus:NO],  p)) { xenoStep(T_COUNT - 2, +1); [self setNeedsDisplay]; return; }
-    if (CGRectContainsPoint([self rectForStepper:T_COUNT - 1 minus:YES], p)) { xenoStep(T_COUNT - 1, -1); [self setNeedsDisplay]; return; }
-    if (CGRectContainsPoint([self rectForStepper:T_COUNT - 1 minus:NO],  p)) { xenoStep(T_COUNT - 1, +1); [self setNeedsDisplay]; return; }
+    // simple toggle hit (expand later)
+    int base = 0;
+    if (gCfg.tab == TAB_AIM) base = T_AIM_MASTER;
+    else if (gCfg.tab == TAB_VISUAL) base = T_ESP_MASTER;
+    else base = T_FLY;
+    for (int i = 0; i < 6; i++) {
+        int idx = base + i;
+        if (idx >= T_COUNT) break;
+        CGRect rr = [self rectForRow:i];
+        if (CGRectContainsPoint(rr, p)) { xenoSetToggle(idx); [self setNeedsDisplay]; return; }
+    }
 }
 
 - (void)touchesMoved:(NSSet*)touches withEvent:(UIEvent*)event {
@@ -78,33 +86,36 @@ static const CGFloat kHeadH  = 46.f;
 - (void)touchesCancelled:(NSSet*)touches withEvent:(UIEvent*)event { _dragging = NO; }
 
 - (CGRect)rectForRow:(int)i {
-    return CGRectMake(_rect.origin.x, _rect.origin.y + kHeadH + kRowH * i, kPanelW, kRowH);
+    return CGRectMake(_rect.origin.x, _rect.origin.y + kHeadH + kTabH + kRowH * i, kPanelW, kRowH);
 }
-
-- (CGRect)rectForStepper:(int)i minus:(BOOL)minus {
-    CGFloat y = _rect.origin.y + kHeadH + kRowH * i;
-    return CGRectMake(_rect.origin.x + kPanelW - (minus ? 84 : 44), y + 7, 30, 20);
-}
-
-static NSString* const kLabels[T_COUNT] = {
-    @"Aimbot", @"Soft Aim", @"No Recoil", @"No Spread",
-    @"Fast Reload", @"Unlimited Ammo", @"Fly", @"Noclip", @"FOV Ring"
-};
 
 - (void)drawRect:(CGRect)rect {
     CGContextRef c = UIGraphicsGetCurrentContext();
 
-    UIBezierPath* panel = [UIBezierPath bezierPathWithRoundedRect:_rect cornerRadius:14];
-    CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:0 alpha:0.94].CGColor);
+    // circle button with stylized M
+    CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:0.08 alpha:0.92].CGColor);
+    CGContextFillEllipseInRect(c, _btnRect);
+    CGContextSetStrokeColorWithColor(c, [UIColor whiteColor].CGColor);
+    CGContextSetLineWidth(c, 1.5);
+    CGContextStrokeEllipseInRect(c, _btnRect);
+    NSDictionary* mAttr = @{ NSFontAttributeName: [UIFont boldSystemFontOfSize:28],
+                             NSForegroundColorAttributeName: UIColor.whiteColor };
+    [@"M" drawAtPoint:CGPointMake(_btnRect.origin.x + 14, _btnRect.origin.y + 8) withAttributes:mAttr];
+
+    if (!gCfg.menuOpen) return;
+
+    // panel
+    UIBezierPath* panel = [UIBezierPath bezierPathWithRoundedRect:_rect cornerRadius:16];
+    CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:0.06 alpha:0.96].CGColor);
     [panel fill];
-    CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.22].CGColor);
-    CGContextSetLineWidth(c, 0.75);
+    CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.18].CGColor);
+    CGContextSetLineWidth(c, 0.6);
     [panel stroke];
 
     // header
-    NSDictionary* headAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightSemibold],
+    NSDictionary* headAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:16 weight:UIFontWeightBold],
                                 NSForegroundColorAttributeName: UIColor.whiteColor };
-    [@"XENO" drawAtPoint:CGPointMake(_rect.origin.x + 14, _rect.origin.y + 13) withAttributes:headAttr];
+    [@"mirage" drawAtPoint:CGPointMake(_rect.origin.x + 16, _rect.origin.y + 14) withAttributes:headAttr];
 
     NSDictionary* subAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightRegular],
                                NSForegroundColorAttributeName: [UIColor colorWithWhite:1 alpha:0.45] };
@@ -113,65 +124,68 @@ static NSString* const kLabels[T_COUNT] = {
         case S_LIVE:      sub = @"live"; break;
         case S_NO_MATCH:  sub = @"no match"; break;
         case S_NO_MODULE: sub = @"no UnityFramework"; break;
-        case S_UUID_BAD:  sub = [NSString stringWithFormat:@"uuid mismatch %s", gUuidActual]; break;
+        case S_UUID_BAD:  sub = [NSString stringWithFormat:@"uuid %s", gUuidActual]; break;
         default:          sub = @"booting"; break;
     }
-    [sub drawAtPoint:CGPointMake(_rect.origin.x + 14, _rect.origin.y + 28) withAttributes:subAttr];
+    [sub drawAtPoint:CGPointMake(_rect.origin.x + 16, _rect.origin.y + 32) withAttributes:subAttr];
+
+    // tabs
+    NSArray* tabs = @[@"AIM", @"VISUAL", @"MOVE"];
+    for (int t = 0; t < TAB_COUNT; t++) {
+        CGRect tr = CGRectMake(_rect.origin.x + t * (kPanelW / TAB_COUNT), _rect.origin.y + kHeadH, kPanelW / TAB_COUNT, kTabH);
+        BOOL sel = gCfg.tab == t;
+        CGContextSetFillColorWithColor(c, (sel ? [UIColor colorWithWhite:1 alpha:0.12] : [UIColor clearColor]).CGColor);
+        CGContextFillRect(c, tr);
+        NSDictionary* ta = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:11 weight:sel ? UIFontWeightSemibold : UIFontWeightRegular],
+                              NSForegroundColorAttributeName: sel ? UIColor.whiteColor : [UIColor colorWithWhite:1 alpha:0.4] };
+        [tabs[t] drawAtPoint:CGPointMake(tr.origin.x + 12, tr.origin.y + 10) withAttributes:ta];
+    }
+
+    // rows per tab
+    NSArray* labels;
+    int base;
+    if (gCfg.tab == TAB_AIM) {
+        labels = @[@"Aim Master", @"Aimbot", @"Soft Aim", @"No Recoil", @"No Spread", @"Fast Reload"];
+        base = T_AIM_MASTER;
+    } else if (gCfg.tab == TAB_VISUAL) {
+        labels = @[@"ESP Master", @"Box", @"Line", @"Name", @"Distance", @"FOV Ring"];
+        base = T_ESP_MASTER;
+    } else {
+        labels = @[@"Fly", @"Noclip"];
+        base = T_FLY;
+    }
 
     NSDictionary* onAttr  = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular],
                                NSForegroundColorAttributeName: UIColor.whiteColor };
     NSDictionary* offAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular],
-                               NSForegroundColorAttributeName: [UIColor colorWithWhite:1 alpha:0.42] };
-    NSDictionary* valAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular],
-                               NSForegroundColorAttributeName: [UIColor colorWithWhite:1 alpha:0.7] };
+                               NSForegroundColorAttributeName: [UIColor colorWithWhite:1 alpha:0.4] };
 
-    for (int i = 0; i < T_COUNT; i++) {
-        CGFloat y = _rect.origin.y + kHeadH + kRowH * i;
-        if (i == T_COUNT - 2 || i == T_COUNT - 1) {
-            NSString* label = i == T_COUNT - 2 ? @"Smooth" : @"FOV";
-            [label drawAtPoint:CGPointMake(_rect.origin.x + 14, y + 9) withAttributes:offAttr];
-            float v = i == T_COUNT - 2 ? gCfg.smooth : gCfg.fovDeg;
-            NSString* s = i == T_COUNT - 2
-                ? [NSString stringWithFormat:@"%.2f", v]
-                : [NSString stringWithFormat:@"%.0f", v];
-            [s drawAtPoint:CGPointMake(_rect.origin.x + kPanelW - 132, y + 9) withAttributes:valAttr];
-            for (int k = 0; k < 2; k++) {
-                CGRect r = [self rectForStepper:i minus:(k == 0)];
-                CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.1].CGColor);
-                [[UIBezierPath bezierPathWithRoundedRect:r cornerRadius:6] fill];
-                NSString* g = k == 0 ? @"−" : @"+";
-                [g drawAtPoint:CGPointMake(r.origin.x + 10, r.origin.y + 2) withAttributes:offAttr];
-            }
-            continue;
-        }
+    for (int i = 0; i < labels.count; i++) {
+        CGFloat y = _rect.origin.y + kHeadH + kTabH + kRowH * i;
+        int idx = base + i;
+        bool on = (idx < T_COUNT) && gCfg.on[idx];
+        [labels[i] drawAtPoint:CGPointMake(_rect.origin.x + 16, y + 8) withAttributes:(on ? onAttr : offAttr)];
 
-        if (i == T_COUNT - 3) {   // divider before steppers
-            CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.12].CGColor);
-            CGContextSetLineWidth(c, 0.5);
-            CGContextMoveToPoint(c, _rect.origin.x + 14, y + 1);
-            CGContextAddLineToPoint(c, _rect.origin.x + kPanelW - 14, y + 1);
-            CGContextStrokePath(c);
-        }
-
-        bool on = gCfg.on[i];
-        [kLabels[i] drawAtPoint:CGPointMake(_rect.origin.x + 14, y + 9) withAttributes:(on ? onAttr : offAttr)];
-
-        CGRect pill = CGRectMake(_rect.origin.x + kPanelW - 58, y + 8, 40, 18);
-        CGContextSetFillColorWithColor(c, (on ? [UIColor whiteColor] : [UIColor colorWithWhite:1 alpha:0.14]).CGColor);
-        [[UIBezierPath bezierPathWithRoundedRect:pill cornerRadius:9] fill];
+        CGRect pill = CGRectMake(_rect.origin.x + kPanelW - 56, y + 6, 40, 20);
+        CGContextSetFillColorWithColor(c, (on ? [UIColor whiteColor] : [UIColor colorWithWhite:1 alpha:0.12]).CGColor);
+        [[UIBezierPath bezierPathWithRoundedRect:pill cornerRadius:10] fill];
         if (on) {
             CGContextSetFillColorWithColor(c, UIColor.blackColor.CGColor);
-            CGContextFillEllipseInRect(c, CGRectMake(pill.origin.x + 22, pill.origin.y + 2, 14, 14));
+            CGContextFillEllipseInRect(c, CGRectMake(pill.origin.x + 22, pill.origin.y + 3, 14, 14));
         }
     }
 
-    // FOV ring
-    if (gCfg.on[T_AIMBOT] || gCfg.on[T_SOFT]) {
-        float r = xenoFovRadius();
-        CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.16].CGColor);
-        CGContextSetLineWidth(c, 0.6);
-        CGRect ring = CGRectMake(self.bounds.size.width * 0.5f - r, self.bounds.size.height * 0.5f - r, r * 2, r * 2);
-        CGContextStrokeEllipseInRect(c, ring);
+    // ESP drawing (simple boxes when master on)
+    if (gCfg.on[T_ESP_MASTER]) {
+        // placeholder: real boxes drawn from Panel.mm worldToScreen calls later
+        CGContextSetStrokeColorWithColor(c, [UIColor colorWithRed:0.2 green:1 blue:0.4 alpha:0.7].CGColor);
+        CGContextSetLineWidth(c, 1.2);
+        // example ring if FOV on
+        if (gCfg.on[T_RING]) {
+            float r = xenoFovRadius();
+            CGRect ring = CGRectMake(self.bounds.size.width * 0.5f - r, self.bounds.size.height * 0.5f - r, r * 2, r * 2);
+            CGContextStrokeEllipseInRect(c, ring);
+        }
     }
 }
 
