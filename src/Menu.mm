@@ -11,6 +11,7 @@ static const CGFloat kBtnSize = 56.f;
 @implementation XenoMenu {
     CGPoint _origin;
     BOOL    _dragging;
+    BOOL    _btnDragging;
     CGPoint _dragStart;
     CGRect  _rect;
     CGRect  _btnRect;
@@ -45,8 +46,8 @@ static const CGFloat kBtnSize = 56.f;
 - (void)touchesBegan:(NSSet*)touches withEvent:(UIEvent*)event {
     CGPoint p = [touches.anyObject locationInView:self];
     if (CGRectContainsPoint(_btnRect, p)) {
-        gCfg.menuOpen = !gCfg.menuOpen;
-        [self setNeedsDisplay];
+        _btnDragging = YES;
+        _dragStart = CGPointMake(p.x - _btnRect.origin.x, p.y - _btnRect.origin.y);
         return;
     }
     if (!gCfg.menuOpen) return;
@@ -73,15 +74,33 @@ static const CGFloat kBtnSize = 56.f;
 }
 
 - (void)touchesMoved:(NSSet*)touches withEvent:(UIEvent*)event {
-    if (!_dragging) return;
     CGPoint p = [touches.anyObject locationInView:self];
+    if (_btnDragging) {
+        _btnRect.origin = CGPointMake(p.x - _dragStart.x, p.y - _dragStart.y);
+        [self setNeedsDisplay];
+        return;
+    }
+    if (!_dragging) return;
     _origin = CGPointMake(p.x - _dragStart.x, p.y - _dragStart.y);
     [self layoutRect];
     [self setNeedsDisplay];
 }
 
-- (void)touchesEnded:(NSSet*)touches withEvent:(UIEvent*)event { _dragging = NO; }
-- (void)touchesCancelled:(NSSet*)touches withEvent:(UIEvent*)event { _dragging = NO; }
+- (void)touchesEnded:(NSSet*)touches withEvent:(UIEvent*)event {
+    if (_btnDragging) {
+        _btnDragging = NO;
+        // tap if barely moved → toggle
+        // (simple: always allow toggle on short press; for now just end)
+        gCfg.menuOpen = !gCfg.menuOpen;
+        [self setNeedsDisplay];
+        return;
+    }
+    _dragging = NO;
+}
+- (void)touchesCancelled:(NSSet*)touches withEvent:(UIEvent*)event {
+    _btnDragging = NO;
+    _dragging = NO;
+}
 
 - (CGRect)rectForRow:(int)i {
     return CGRectMake(_rect.origin.x, _rect.origin.y + kHeadH + kTabH + kRowH * i, kPanelW, kRowH);
@@ -90,7 +109,7 @@ static const CGFloat kBtnSize = 56.f;
 - (void)drawRect:(CGRect)rect {
     CGContextRef c = UIGraphicsGetCurrentContext();
 
-    // floating M button — clean circle with subtle glow
+    // floating M button
     CGContextSetFillColorWithColor(c, [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95].CGColor);
     CGContextFillEllipseInRect(c, _btnRect);
     CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.35].CGColor);
@@ -100,9 +119,17 @@ static const CGFloat kBtnSize = 56.f;
                              NSForegroundColorAttributeName: UIColor.whiteColor };
     [@"M" drawAtPoint:CGPointMake(_btnRect.origin.x + 16, _btnRect.origin.y + 9) withAttributes:mAttr];
 
+    // FOV ring always (when enabled)
+    if (gCfg.on[T_ESP_MASTER] && gCfg.on[T_RING]) {
+        CGContextSetStrokeColorWithColor(c, [UIColor colorWithRed:0.3 green:0.85 blue:0.5 alpha:0.55].CGColor);
+        CGContextSetLineWidth(c, 1.4);
+        float r = xenoFovRadius();
+        CGRect ring = CGRectMake(self.bounds.size.width * 0.5f - r, self.bounds.size.height * 0.5f - r, r * 2, r * 2);
+        CGContextStrokeEllipseInRect(c, ring);
+    }
+
     if (!gCfg.menuOpen) return;
 
-    // panel with soft shadow-like border
     UIBezierPath* panel = [UIBezierPath bezierPathWithRoundedRect:_rect cornerRadius:18];
     CGContextSetFillColorWithColor(c, [UIColor colorWithRed:0.07 green:0.07 blue:0.09 alpha:0.97].CGColor);
     [panel fill];
@@ -110,7 +137,6 @@ static const CGFloat kBtnSize = 56.f;
     CGContextSetLineWidth(c, 0.8);
     [panel stroke];
 
-    // header
     NSDictionary* headAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:18 weight:UIFontWeightSemibold],
                                 NSForegroundColorAttributeName: UIColor.whiteColor };
     [@"mirage" drawAtPoint:CGPointMake(_rect.origin.x + 18, _rect.origin.y + 16) withAttributes:headAttr];
@@ -127,7 +153,6 @@ static const CGFloat kBtnSize = 56.f;
     }
     [sub drawAtPoint:CGPointMake(_rect.origin.x + 18, _rect.origin.y + 36) withAttributes:subAttr];
 
-    // tabs with accent
     NSArray* tabs = @[@"AIM", @"VISUAL", @"MOVE"];
     for (int t = 0; t < TAB_COUNT; t++) {
         CGRect tr = CGRectMake(_rect.origin.x + t * (kPanelW / TAB_COUNT), _rect.origin.y + kHeadH, kPanelW / TAB_COUNT, kTabH);
@@ -173,14 +198,6 @@ static const CGFloat kBtnSize = 56.f;
             CGContextSetFillColorWithColor(c, [UIColor colorWithRed:0.07 green:0.07 blue:0.09 alpha:1].CGColor);
             CGContextFillEllipseInRect(c, CGRectMake(pill.origin.x + 24, pill.origin.y + 3, 14, 14));
         }
-    }
-
-    if (gCfg.on[T_ESP_MASTER] && gCfg.on[T_RING]) {
-        CGContextSetStrokeColorWithColor(c, [UIColor colorWithRed:0.3 green:0.85 blue:0.5 alpha:0.55].CGColor);
-        CGContextSetLineWidth(c, 1.4);
-        float r = xenoFovRadius();
-        CGRect ring = CGRectMake(self.bounds.size.width * 0.5f - r, self.bounds.size.height * 0.5f - r, r * 2, r * 2);
-        CGContextStrokeEllipseInRect(c, ring);
     }
 }
 
