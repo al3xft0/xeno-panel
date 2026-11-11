@@ -56,12 +56,10 @@ static const CGFloat kBtnSize = 52.f;
         _dragStart = CGPointMake(p.x - _origin.x, p.y - _origin.y);
         return;
     }
-    // tabs
     for (int t = 0; t < TAB_COUNT; t++) {
         CGRect tr = CGRectMake(_rect.origin.x + t * (kPanelW / TAB_COUNT), _rect.origin.y + kHeadH, kPanelW / TAB_COUNT, kTabH);
         if (CGRectContainsPoint(tr, p)) { gCfg.tab = t; [self setNeedsDisplay]; return; }
     }
-    // simple toggle hit (expand later)
     int base = 0;
     if (gCfg.tab == TAB_AIM) base = T_AIM_MASTER;
     else if (gCfg.tab == TAB_VISUAL) base = T_ESP_MASTER;
@@ -92,7 +90,6 @@ static const CGFloat kBtnSize = 52.f;
 - (void)drawRect:(CGRect)rect {
     CGContextRef c = UIGraphicsGetCurrentContext();
 
-    // circle button with stylized M
     CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:0.08 alpha:0.92].CGColor);
     CGContextFillEllipseInRect(c, _btnRect);
     CGContextSetStrokeColorWithColor(c, [UIColor whiteColor].CGColor);
@@ -104,7 +101,6 @@ static const CGFloat kBtnSize = 52.f;
 
     if (!gCfg.menuOpen) return;
 
-    // panel
     UIBezierPath* panel = [UIBezierPath bezierPathWithRoundedRect:_rect cornerRadius:16];
     CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:0.06 alpha:0.96].CGColor);
     [panel fill];
@@ -112,7 +108,6 @@ static const CGFloat kBtnSize = 52.f;
     CGContextSetLineWidth(c, 0.6);
     [panel stroke];
 
-    // header
     NSDictionary* headAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:16 weight:UIFontWeightBold],
                                 NSForegroundColorAttributeName: UIColor.whiteColor };
     [@"mirage" drawAtPoint:CGPointMake(_rect.origin.x + 16, _rect.origin.y + 14) withAttributes:headAttr];
@@ -129,7 +124,6 @@ static const CGFloat kBtnSize = 52.f;
     }
     [sub drawAtPoint:CGPointMake(_rect.origin.x + 16, _rect.origin.y + 32) withAttributes:subAttr];
 
-    // tabs
     NSArray* tabs = @[@"AIM", @"VISUAL", @"MOVE"];
     for (int t = 0; t < TAB_COUNT; t++) {
         CGRect tr = CGRectMake(_rect.origin.x + t * (kPanelW / TAB_COUNT), _rect.origin.y + kHeadH, kPanelW / TAB_COUNT, kTabH);
@@ -141,7 +135,6 @@ static const CGFloat kBtnSize = 52.f;
         [tabs[t] drawAtPoint:CGPointMake(tr.origin.x + 12, tr.origin.y + 10) withAttributes:ta];
     }
 
-    // rows per tab
     NSArray* labels;
     int base;
     if (gCfg.tab == TAB_AIM) {
@@ -151,7 +144,7 @@ static const CGFloat kBtnSize = 52.f;
         labels = @[@"ESP Master", @"Box", @"Line", @"Name", @"Distance", @"FOV Ring"];
         base = T_ESP_MASTER;
     } else {
-        labels = @[@"Fly", @"Noclip"];
+        labels = @[@"Fly", @"Noclip", @"Rest Guest"];
         base = T_FLY;
     }
 
@@ -175,12 +168,9 @@ static const CGFloat kBtnSize = 52.f;
         }
     }
 
-    // ESP drawing (simple boxes when master on)
     if (gCfg.on[T_ESP_MASTER]) {
-        // placeholder: real boxes drawn from Panel.mm worldToScreen calls later
         CGContextSetStrokeColorWithColor(c, [UIColor colorWithRed:0.2 green:1 blue:0.4 alpha:0.7].CGColor);
         CGContextSetLineWidth(c, 1.2);
-        // example ring if FOV on
         if (gCfg.on[T_RING]) {
             float r = xenoFovRadius();
             CGRect ring = CGRectMake(self.bounds.size.width * 0.5f - r, self.bounds.size.height * 0.5f - r, r * 2, r * 2);
