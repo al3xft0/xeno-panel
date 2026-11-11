@@ -5,7 +5,7 @@ DUMP    := OffsetsDump.dylib
 SRC     := src/Panel.mm src/Menu.mm
 FLAGS   := -std=c++17 -fobjc-arc -O2 -fvisibility=hidden \
            -mios-version-min=$(MIN) -Isrc \
-           -framework UIKit -framework QuartzCore
+           -framework UIKit -framework QuartzCore -framework CoreGraphics
 
 all: $(OUT)
 
@@ -30,10 +30,7 @@ dump: src/Dump.mm src/*.h
 	lipo -create -output $(DUMP) $(DUMP).arm64 $(DUMP).arm64e
 	@rm -f $(DUMP).arm64 $(DUMP).arm64e
 
-dump-ipa:
-	./scripts/inject.sh base.ipa dump-injected.ipa $(DUMP)
-
 clean:
 	rm -f $(OUT) $(OUT).* $(DUMP) $(DUMP).*
 
-.PHONY: all arm64 arm64e dump dump-ipa clean
+.PHONY: all arm64 arm64e dump clean
