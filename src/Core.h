@@ -6,11 +6,21 @@ enum Group {
 };
 
 enum Toggle {
-    T_AIMBOT, T_SOFT, T_RECOIL, T_SPREAD, T_RELOAD, T_AMMO, T_FLY, T_NOCLIP, T_RING, T_COUNT
+    // Aim tab
+    T_AIM_MASTER, T_AIMBOT, T_SOFT, T_RECOIL, T_SPREAD, T_RELOAD, T_AMMO,
+    // Visual tab
+    T_ESP_MASTER, T_ESP_BOX, T_ESP_LINE, T_ESP_NAME, T_ESP_DIST, T_RING,
+    // Movement
+    T_FLY, T_NOCLIP,
+    T_COUNT
 };
 
 enum Status {
     S_BOOT, S_NO_MODULE, S_UUID_BAD, S_NO_MATCH, S_LIVE
+};
+
+enum Tab {
+    TAB_AIM = 0, TAB_VISUAL, TAB_MOVE, TAB_COUNT
 };
 
 struct Config {
@@ -20,6 +30,8 @@ struct Config {
     float screenW, screenH;
     float insetTop;
     int   status;
+    int   tab;
+    bool  menuOpen;
 };
 
 extern Config gCfg;
