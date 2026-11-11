@@ -11,7 +11,7 @@ enum Toggle {
     // Visual tab
     T_ESP_MASTER, T_ESP_BOX, T_ESP_LINE, T_ESP_NAME, T_ESP_DIST, T_RING,
     // Movement
-    T_FLY, T_NOCLIP,
+    T_FLY, T_NOCLIP, T_REST_GUEST,
     T_COUNT
 };
 
@@ -43,3 +43,4 @@ void  xenoStep(int idx, int dir);
 void  xenoApply(void);
 float xenoFovRadius(void);
 void  xenoReattach(void);
+void  xenoRestGuest(void);
