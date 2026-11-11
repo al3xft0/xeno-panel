@@ -4,7 +4,7 @@
 #include <cstring>
 #include <cstdlib>
 #include "Core.h"
-#include "Math.h"
+#include "VecMath.h"
 #include "Mem.h"
 #include "Menu.h"
 #include "Offsets.h"
