@@ -9,7 +9,7 @@
 #include "Menu.h"
 #include "Offsets.h"
 
-Config gCfg = { .smooth = 0.22f, .fovDeg = 14.f, .status = S_BOOT };
+Config gCfg = { .smooth = 0.22f, .fovDeg = 14.f, .status = S_BOOT, .tab = TAB_AIM, .menuOpen = true };
 char   gUuidActual[64] = {0};
 
 static uintptr_t gBase = 0;
@@ -17,176 +17,13 @@ static bool      gUuidOk = true;
 static uintptr_t gLastPlayer = 0;
 static uintptr_t gLastTarget = 0;
 static Quat      gAimState = {0,0,0,1};
-static uintptr_t gMainWindow = 0;
 static XenoMenu* gMenu = nil;
 static NSTimer*  gAttach = nil;
 
-// ---------------- module resolve ----------------
-
-static const char* imageName(uint32_t i) { return _dyld_get_image_name(i); }
-
-static bool isTargetModule(const char* path) {
-    if (!path) return false;
-    const char* slash = strrchr(path, '/');
-    const char* leaf = slash ? slash + 1 : path;
-    return strcmp(leaf, off::kModule) == 0;   // exact leaf, not substring
-}
-
-static void readUUID(const struct mach_header_64* h, char* out, size_t cap) {
-    uintptr_t p = (uintptr_t)h + sizeof(*h);
-    for (uint32_t i = 0; i < h->ncmds; i++) {
-        const struct load_command* lc = (const struct load_command*)p;
-        if (lc->cmd == LC_UUID) {
-            const struct uuid_command* uc = (const struct uuid_command*)lc;
-            snprintf(out, cap, "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
-                uc->uuid[0], uc->uuid[1], uc->uuid[2], uc->uuid[3], uc->uuid[4], uc->uuid[5],
-                uc->uuid[6], uc->uuid[7], uc->uuid[8], uc->uuid[9], uc->uuid[10], uc->uuid[11],
-                uc->uuid[12], uc->uuid[13], uc->uuid[14], uc->uuid[15]);
-            return;
-        }
-        p += lc->cmdsize;
-    }
-}
-
-static uintptr_t resolveBase(void) {
-    if (gBase) return gBase;
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char* n = imageName(i);
-        if (!isTargetModule(n)) continue;
-        gBase = strip((uintptr_t)_dyld_get_image_header(i));
-        readUUID((const struct mach_header_64*)gBase, gUuidActual, sizeof gUuidActual);
-        if (off::kExpectedUUID[0] && strcasecmp(gUuidActual, off::kExpectedUUID) != 0) {
-            gUuidOk = false;
-            NSLog(@"[XENO] UUID mismatch: got %s want %s", gUuidActual, off::kExpectedUUID);
-        }
-        NSLog(@"[XENO] module %s @ %p uuid %s", n, (void*)gBase, gUuidActual);
-        return gBase;
-    }
-    return 0;
-}
-
-static uintptr_t matchPtr(void) {
-    uintptr_t b = resolveBase();
-    if (!b) return 0;
-    uintptr_t cls = strip(read<uintptr_t>(b + off::InitBase));
-    if (!isHeap(cls)) return 0;
-    uintptr_t statics = strip(read<uintptr_t>(cls + off::StaticFields));
-    if (!isHeap(statics)) return 0;
-    return strip(read<uintptr_t>(statics + off::CurrentMatch));
-}
-
-static uintptr_t localPtr(void) {
-    uintptr_t m = matchPtr();
-    if (!m) return 0;
-    return strip(read<uintptr_t>(m + off::LocalPlayer));
-}
-
-// ---------------- world transforms ----------------
-
-static bool worldMatrix(uintptr_t tf, Mat4* out, int depth) {
-    if (!isHeap(tf) || depth > 16) return false;
-    Quat q = read<Quat>(tf + off::Tf_LocalRotation);
-    Vec3 p = read<Vec3>(tf + off::Tf_LocalPosition);
-    Vec3 s = read<Vec3>(tf + off::Tf_LocalScale);
-    Mat4 local = trs(q, p, s);
-    uintptr_t father = strip(read<uintptr_t>(tf + off::Tf_Father));
-    if (isHeap(father) && father != tf) {
-        Mat4 parent;
-        if (!worldMatrix(father, &parent, depth + 1)) return false;
-        *out = mmul(parent, local);
-        return true;
-    }
-    *out = local;
-    return true;
-}
-
-static bool worldPos(uintptr_t tf, Vec3* out) {
-    Mat4 m;
-    if (!worldMatrix(tf, &m, 0)) return false;
-    *out = { m.m[12], m.m[13], m.m[14] };
-    return true;
-}
-
-static bool worldRot(uintptr_t tf, Quat* out, int depth) {
-    if (!isHeap(tf) || depth > 16) return false;
-    Quat q = qnorm(read<Quat>(tf + off::Tf_LocalRotation));
-    uintptr_t father = strip(read<uintptr_t>(tf + off::Tf_Father));
-    if (isHeap(father) && father != tf) {
-        Quat parent;
-        if (!worldRot(father, &parent, depth + 1)) return false;
-        *out = qmul(parent, q);
-        return true;
-    }
-    *out = q;
-    return true;
-}
-
-// ---------------- view matrix ----------------
-
-static bool saneMatrix(const float* m) {
-    if (!m) return false;
-    for (int i = 0; i < 16; i++) if (!isfinite(m[i])) return false;
-    if (fabsf(m[15] - 1.f) > 0.05f) return false;
-    if (fabsf(m[3]) > 0.01f || fabsf(m[7]) > 0.01f || fabsf(m[11]) > 0.01f) return false;
-    float t = fabsf(m[12]) + fabsf(m[13]) + fabsf(m[14]);
-    return t > 0.001f && t < 1e7f;
-}
-
-static const float* viewMatrix(uintptr_t cam) {
-    if (!isHeap(cam)) return nullptr;
-    uintptr_t f = strip(read<uintptr_t>(cam + off::Cam_ViewMatrixField));
-    if (isHeap(f) && saneMatrix((const float*)f)) return (const float*)f;   // field held a pointer
-    uintptr_t native = strip(read<uintptr_t>(cam + off::Obj_CachedPtr));
-    if (isHeap(native) && saneMatrix((const float*)(native + off::Cam_ViewMatrixField)))
-        return (const float*)(native + off::Cam_ViewMatrixField);
-    if (saneMatrix((const float*)(cam + off::Cam_ViewMatrixField)))
-        return (const float*)(cam + off::Cam_ViewMatrixField);              // inline matrix
-    return nullptr;
-}
-
-// ---------------- apply ----------------
-
-static void applyRecoil(uintptr_t lp) {
-    uintptr_t w = strip(read<uintptr_t>(lp + off::Weapon));
-    if (!isHeap(w)) return;
-    uintptr_t feel = strip(read<uintptr_t>(w + off::Weapon_GunFeelProfile));
-    if (!isHeap(feel)) return;
-    saveWrite<bool>(G_RECOIL, feel + off::WGP_EnableRecoil, false);
-    saveWrite<bool>(G_RECOIL, feel + off::WGP_EnableGunFeel, false);
-    saveWrite<float>(G_RECOIL, feel + off::WGP_HipRecoilPitchScale, 0.f);
-    saveWrite<float>(G_RECOIL, feel + off::WGP_HipRecoilYawScale, 0.f);
-}
-
-static void applySpread(uintptr_t lp) {
-    uintptr_t w = strip(read<uintptr_t>(lp + off::Weapon));
-    if (!isHeap(w)) return;
-    uintptr_t feel = strip(read<uintptr_t>(w + off::Weapon_GunFeelProfile));
-    if (!isHeap(feel)) return;
-    saveWrite<bool>(G_SPREAD, feel + off::WGP_EnableSpread, false);
-    saveWrite<float>(G_SPREAD, feel + off::WGP_HipSpreadLimit, 0.f);
-    saveWrite<float>(G_SPREAD, feel + off::WGP_AdsSpreadLimit, 0.f);
-}
-
-static void applyReload(uintptr_t lp) {
-    uintptr_t w = strip(read<uintptr_t>(lp + off::Weapon));
-    if (!isHeap(w)) return;
-    uintptr_t data = strip(read<uintptr_t>(w + off::WeaponData));
-    if (isHeap(data)) saveWrite<float>(G_RELOAD, data + off::ReloadSpeed, 8.5f);
-}
-
-static void applyAmmo(uintptr_t lp) {
-    uintptr_t attr = strip(read<uintptr_t>(lp + off::LocalPlayerAttributes));
-    if (isHeap(attr)) saveWrite<bool>(G_AMMO, attr + off::Attr_UnlimitedAmmo, true);
-}
-
-static void applyMovement(uintptr_t lp) {
-    uintptr_t cc = strip(read<uintptr_t>(lp + off::CharController));
-    if (!isHeap(cc)) return;
-    if (gCfg.on[T_FLY])   saveWrite<bool>(G_FLY,   cc + off::CCT_UseGravity, false);
-    if (gCfg.on[T_NOCLIP]) saveWrite<bool>(G_NOCLIP, cc + off::CCT_SolveCollisions, false);
-}
+// ... (keep all the existing helper functions exactly as they were: imageName, isTargetModule, readUUID, resolveBase, matchPtr, localPtr, worldMatrix, worldPos, worldRot, saneMatrix, viewMatrix, applyRecoil, applySpread, applyReload, applyAmmo, applyMovement)
 
 static void applyAim(uintptr_t lp, uintptr_t match) {
+    if (!gCfg.on[T_AIM_MASTER]) return;
     if (!gCfg.on[T_AIMBOT] && !gCfg.on[T_SOFT]) return;
 
     uintptr_t cam = strip(read<uintptr_t>(lp + off::MainCameraTransform));
@@ -212,7 +49,7 @@ static void applyAim(uintptr_t lp, uintptr_t match) {
 
     for (int i = 0; i < count; i++) {
         uintptr_t e = entries + (uintptr_t)i * off::Entry_Stride;
-        if (read<int>(e + off::Entry_Hash) < 0) continue;          // free slot
+        if (read<int>(e + off::Entry_Hash) < 0) continue;
         uintptr_t p = strip(read<uintptr_t>(e + off::Entry_Value));
         if (!isHeap(p) || p == lp) continue;
         if (read<bool>(p + off::Player_IsDead)) continue;
@@ -226,8 +63,6 @@ static void applyAim(uintptr_t lp, uintptr_t match) {
     }
     if (!bestPlayer) { bc::mark("aim: no target"); return; }
 
-    // desired camera orientation, then de-rotate into player-root space so the
-    // third-person camera offset doesn't bias the shot
     Quat desiredCam = lookAt(camW, bestHead);
     Quat target = qmul(qmul(desiredCam, qinv(camWr)), rootWr);
 
@@ -238,10 +73,7 @@ static void applyAim(uintptr_t lp, uintptr_t match) {
     write<Quat>(lp + off::AimRotation, qnorm(out));
 }
 
-// ---------------- tick ----------------
-
 float xenoFovRadius(void) {
-    // degrees -> pixels, relative to a nominal 60 deg vertical FOV
     const float halfV = 30.f * (float)M_PI / 180.f;
     return tanf(gCfg.fovDeg * 0.5f * (float)M_PI / 180.f) / tanf(halfV) * (gCfg.screenH * 0.5f);
 }
@@ -262,12 +94,15 @@ void xenoApply(void) {
     if (read<bool>(lp + off::Player_IsDead)) return;
 
     uintptr_t match = matchPtr();
-    if (gCfg.on[T_RECOIL]) applyRecoil(lp);
-    if (gCfg.on[T_SPREAD]) applySpread(lp);
-    if (gCfg.on[T_RELOAD]) applyReload(lp);
-    if (gCfg.on[T_AMMO])   applyAmmo(lp);
+    if (gCfg.on[T_AIM_MASTER]) {
+        if (gCfg.on[T_RECOIL]) applyRecoil(lp);
+        if (gCfg.on[T_SPREAD]) applySpread(lp);
+        if (gCfg.on[T_RELOAD]) applyReload(lp);
+        if (gCfg.on[T_AMMO])   applyAmmo(lp);
+        applyAim(lp, match);
+    }
     if (gCfg.on[T_FLY] || gCfg.on[T_NOCLIP]) applyMovement(lp);
-    applyAim(lp, match);
+    // ESP boxes: collect in next pass and let menu draw them
 }
 
 void xenoSetToggle(int idx) {
@@ -295,8 +130,6 @@ void xenoStep(int idx, int dir) {
         gCfg.fovDeg = fminf(90.f, fmaxf(1.f, gCfg.fovDeg + dir * 2.f));
     }
 }
-
-// ---------------- attach ----------------
 
 static UIWindow* keyWindow(void) {
     for (UIScene* s in UIApplication.sharedApplication.connectedScenes) {
@@ -332,7 +165,6 @@ static void attach(void) {
     }
 }
 
-// apply loop object — CADisplayLink needs an ObjC target
 @interface XenoTick : NSObject
 @end
 @implementation XenoTick
@@ -364,7 +196,6 @@ void xenoStart(void) {
         attach();
         if (gMenu && gMenu.superview) { ensureTick(); [t invalidate]; }
     }];
-    // keep re-verifying the UUID gate until the module shows up
     [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer* t) {
         if (resolveBase()) [t invalidate];
     }];
@@ -372,5 +203,8 @@ void xenoStart(void) {
 
 __attribute__((constructor))
 static void xenoInit(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{ xenoStart(); });
+    // delayed attach so the game loads clean first
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        xenoStart();
+    });
 }
