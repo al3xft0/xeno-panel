@@ -2,11 +2,11 @@
 #import "Core.h"
 #import <QuartzCore/QuartzCore.h>
 
-static const CGFloat kPanelW = 280.f;
-static const CGFloat kRowH   = 32.f;
-static const CGFloat kHeadH  = 52.f;
-static const CGFloat kTabH   = 36.f;
-static const CGFloat kBtnSize = 52.f;
+static const CGFloat kPanelW = 300.f;
+static const CGFloat kRowH   = 34.f;
+static const CGFloat kHeadH  = 56.f;
+static const CGFloat kTabH   = 38.f;
+static const CGFloat kBtnSize = 56.f;
 
 @implementation XenoMenu {
     CGPoint _origin;
@@ -22,15 +22,15 @@ static const CGFloat kBtnSize = 52.f;
     self.backgroundColor = UIColor.clearColor;
     self.opaque = NO;
     self.multipleTouchEnabled = NO;
-    _origin = CGPointMake(20, gCfg.insetTop + 60);
+    _origin = CGPointMake(24, gCfg.insetTop + 70);
     gCfg.menuOpen = YES;
     [self layoutRect];
     return self;
 }
 
 - (void)layoutRect {
-    _rect = CGRectMake(_origin.x, _origin.y, kPanelW, kHeadH + kTabH + kRowH * 8 + 20);
-    _btnRect = CGRectMake(self.bounds.size.width - kBtnSize - 16, self.bounds.size.height - kBtnSize - 80, kBtnSize, kBtnSize);
+    _rect = CGRectMake(_origin.x, _origin.y, kPanelW, kHeadH + kTabH + kRowH * 8 + 24);
+    _btnRect = CGRectMake(self.bounds.size.width - kBtnSize - 20, self.bounds.size.height - kBtnSize - 90, kBtnSize, kBtnSize);
 }
 
 - (BOOL)pointInside:(CGPoint)p withEvent:(UIEvent*)e {
@@ -90,30 +90,33 @@ static const CGFloat kBtnSize = 52.f;
 - (void)drawRect:(CGRect)rect {
     CGContextRef c = UIGraphicsGetCurrentContext();
 
-    CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:0.08 alpha:0.92].CGColor);
+    // floating M button — clean circle with subtle glow
+    CGContextSetFillColorWithColor(c, [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95].CGColor);
     CGContextFillEllipseInRect(c, _btnRect);
-    CGContextSetStrokeColorWithColor(c, [UIColor whiteColor].CGColor);
-    CGContextSetLineWidth(c, 1.5);
+    CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.35].CGColor);
+    CGContextSetLineWidth(c, 1.8);
     CGContextStrokeEllipseInRect(c, _btnRect);
-    NSDictionary* mAttr = @{ NSFontAttributeName: [UIFont boldSystemFontOfSize:28],
+    NSDictionary* mAttr = @{ NSFontAttributeName: [UIFont systemFontOfSize:30 weight:UIFontWeightBold],
                              NSForegroundColorAttributeName: UIColor.whiteColor };
-    [@"M" drawAtPoint:CGPointMake(_btnRect.origin.x + 14, _btnRect.origin.y + 8) withAttributes:mAttr];
+    [@"M" drawAtPoint:CGPointMake(_btnRect.origin.x + 16, _btnRect.origin.y + 9) withAttributes:mAttr];
 
     if (!gCfg.menuOpen) return;
 
-    UIBezierPath* panel = [UIBezierPath bezierPathWithRoundedRect:_rect cornerRadius:16];
-    CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:0.06 alpha:0.96].CGColor);
+    // panel with soft shadow-like border
+    UIBezierPath* panel = [UIBezierPath bezierPathWithRoundedRect:_rect cornerRadius:18];
+    CGContextSetFillColorWithColor(c, [UIColor colorWithRed:0.07 green:0.07 blue:0.09 alpha:0.97].CGColor);
     [panel fill];
-    CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.18].CGColor);
-    CGContextSetLineWidth(c, 0.6);
+    CGContextSetStrokeColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.12].CGColor);
+    CGContextSetLineWidth(c, 0.8);
     [panel stroke];
 
-    NSDictionary* headAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:16 weight:UIFontWeightBold],
+    // header
+    NSDictionary* headAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:18 weight:UIFontWeightSemibold],
                                 NSForegroundColorAttributeName: UIColor.whiteColor };
-    [@"mirage" drawAtPoint:CGPointMake(_rect.origin.x + 16, _rect.origin.y + 14) withAttributes:headAttr];
+    [@"mirage" drawAtPoint:CGPointMake(_rect.origin.x + 18, _rect.origin.y + 16) withAttributes:headAttr];
 
-    NSDictionary* subAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightRegular],
-                               NSForegroundColorAttributeName: [UIColor colorWithWhite:1 alpha:0.45] };
+    NSDictionary* subAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightRegular],
+                               NSForegroundColorAttributeName: [UIColor colorWithWhite:0.7 alpha:0.55] };
     NSString* sub;
     switch (gCfg.status) {
         case S_LIVE:      sub = @"live"; break;
@@ -122,17 +125,20 @@ static const CGFloat kBtnSize = 52.f;
         case S_UUID_BAD:  sub = [NSString stringWithFormat:@"uuid %s", gUuidActual]; break;
         default:          sub = @"booting"; break;
     }
-    [sub drawAtPoint:CGPointMake(_rect.origin.x + 16, _rect.origin.y + 32) withAttributes:subAttr];
+    [sub drawAtPoint:CGPointMake(_rect.origin.x + 18, _rect.origin.y + 36) withAttributes:subAttr];
 
+    // tabs with accent
     NSArray* tabs = @[@"AIM", @"VISUAL", @"MOVE"];
     for (int t = 0; t < TAB_COUNT; t++) {
         CGRect tr = CGRectMake(_rect.origin.x + t * (kPanelW / TAB_COUNT), _rect.origin.y + kHeadH, kPanelW / TAB_COUNT, kTabH);
         BOOL sel = gCfg.tab == t;
-        CGContextSetFillColorWithColor(c, (sel ? [UIColor colorWithWhite:1 alpha:0.12] : [UIColor clearColor]).CGColor);
-        CGContextFillRect(c, tr);
-        NSDictionary* ta = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:11 weight:sel ? UIFontWeightSemibold : UIFontWeightRegular],
-                              NSForegroundColorAttributeName: sel ? UIColor.whiteColor : [UIColor colorWithWhite:1 alpha:0.4] };
-        [tabs[t] drawAtPoint:CGPointMake(tr.origin.x + 12, tr.origin.y + 10) withAttributes:ta];
+        if (sel) {
+            CGContextSetFillColorWithColor(c, [UIColor colorWithWhite:1 alpha:0.08].CGColor);
+            CGContextFillRect(c, tr);
+        }
+        NSDictionary* ta = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:12 weight:sel ? UIFontWeightSemibold : UIFontWeightRegular],
+                              NSForegroundColorAttributeName: sel ? UIColor.whiteColor : [UIColor colorWithWhite:0.65 alpha:0.5] };
+        [tabs[t] drawAtPoint:CGPointMake(tr.origin.x + 14, tr.origin.y + 11) withAttributes:ta];
     }
 
     NSArray* labels;
@@ -148,34 +154,33 @@ static const CGFloat kBtnSize = 52.f;
         base = T_FLY;
     }
 
-    NSDictionary* onAttr  = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular],
+    NSDictionary* onAttr  = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular],
                                NSForegroundColorAttributeName: UIColor.whiteColor };
-    NSDictionary* offAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular],
-                               NSForegroundColorAttributeName: [UIColor colorWithWhite:1 alpha:0.4] };
+    NSDictionary* offAttr = @{ NSFontAttributeName: [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular],
+                               NSForegroundColorAttributeName: [UIColor colorWithWhite:0.65 alpha:0.45] };
 
     for (int i = 0; i < labels.count; i++) {
         CGFloat y = _rect.origin.y + kHeadH + kTabH + kRowH * i;
         int idx = base + i;
         bool on = (idx < T_COUNT) && gCfg.on[idx];
-        [labels[i] drawAtPoint:CGPointMake(_rect.origin.x + 16, y + 8) withAttributes:(on ? onAttr : offAttr)];
+        [labels[i] drawAtPoint:CGPointMake(_rect.origin.x + 18, y + 9) withAttributes:(on ? onAttr : offAttr)];
 
-        CGRect pill = CGRectMake(_rect.origin.x + kPanelW - 56, y + 6, 40, 20);
-        CGContextSetFillColorWithColor(c, (on ? [UIColor whiteColor] : [UIColor colorWithWhite:1 alpha:0.12]).CGColor);
-        [[UIBezierPath bezierPathWithRoundedRect:pill cornerRadius:10] fill];
+        CGRect pill = CGRectMake(_rect.origin.x + kPanelW - 62, y + 7, 44, 20);
+        UIBezierPath* pillPath = [UIBezierPath bezierPathWithRoundedRect:pill cornerRadius:10];
+        CGContextSetFillColorWithColor(c, (on ? [UIColor whiteColor] : [UIColor colorWithWhite:1 alpha:0.1]).CGColor);
+        [pillPath fill];
         if (on) {
-            CGContextSetFillColorWithColor(c, UIColor.blackColor.CGColor);
-            CGContextFillEllipseInRect(c, CGRectMake(pill.origin.x + 22, pill.origin.y + 3, 14, 14));
+            CGContextSetFillColorWithColor(c, [UIColor colorWithRed:0.07 green:0.07 blue:0.09 alpha:1].CGColor);
+            CGContextFillEllipseInRect(c, CGRectMake(pill.origin.x + 24, pill.origin.y + 3, 14, 14));
         }
     }
 
-    if (gCfg.on[T_ESP_MASTER]) {
-        CGContextSetStrokeColorWithColor(c, [UIColor colorWithRed:0.2 green:1 blue:0.4 alpha:0.7].CGColor);
-        CGContextSetLineWidth(c, 1.2);
-        if (gCfg.on[T_RING]) {
-            float r = xenoFovRadius();
-            CGRect ring = CGRectMake(self.bounds.size.width * 0.5f - r, self.bounds.size.height * 0.5f - r, r * 2, r * 2);
-            CGContextStrokeEllipseInRect(c, ring);
-        }
+    if (gCfg.on[T_ESP_MASTER] && gCfg.on[T_RING]) {
+        CGContextSetStrokeColorWithColor(c, [UIColor colorWithRed:0.3 green:0.85 blue:0.5 alpha:0.55].CGColor);
+        CGContextSetLineWidth(c, 1.4);
+        float r = xenoFovRadius();
+        CGRect ring = CGRectMake(self.bounds.size.width * 0.5f - r, self.bounds.size.height * 0.5f - r, r * 2, r * 2);
+        CGContextStrokeEllipseInRect(c, ring);
     }
 }
 
