@@ -1,12 +1,8 @@
 name: build
 on:
-  workflow_dispatch:
-    inputs:
-      ipa_url:
-        description: direct URL to a DECRYPTED Free Fire IPA
-        required: true
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   dylib:
@@ -14,45 +10,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: toolchain
-        run: |
-          brew install ldid || true
-          git clone --depth 1 https://github.com/Tyilo/insert_dylib /tmp/idl
-          cd /tmp/idl && xcodebuild -project insert_dylib.xcodeproj \
-            -configuration Release CONFIGURATION_BUILD_DIR=/tmp/bin | xcpretty || true
-          mkdir -p bin && cp /tmp/bin/insert_dylib bin/ && chmod +x bin/insert_dylib
-
-      - name: build dylib
+      - name: build panel dylib
         run: make
 
       - name: build dump dylib
         run: make dump
 
-      - name: fetch ipa
-        if: github.event_name == 'workflow_dispatch'
-        run: curl -fL "${{ github.event.inputs.ipa_url }}" -o base.ipa
-
-      - name: inject
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          chmod +x scripts/inject.sh
-          ./scripts/inject.sh base.ipa injected.ipa
-
-      - name: dump ipa
-        if: github.event_name == 'workflow_dispatch'
-        run: make dump-ipa
-
-      - name: diff against committed report
-        if: hashFiles('offsets_report.json') != ''
-        run: python3 scripts/diff_offsets.py offsets_report.json
-        continue-on-error: true
-
       - uses: actions/upload-artifact@v4
         with:
-          name: xeno
+          name: xeno-dylibs
           path: |
             FreeFirePanel.dylib
             OffsetsDump.dylib
-            injected.ipa
-            dump-injected.ipa
-          if-no-files-found: warn
+          if-no-files-found: error
